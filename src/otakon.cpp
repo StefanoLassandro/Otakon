@@ -12,12 +12,16 @@
 #include <string>
 #include <stdexcept>
 #include <time.h> // needed for initializing srand()
+//#include <dirent.h> // necessary for directory control.
+#include <errno.h>
+#include <sys/types.h> // necessary for directory control.
+#include <sys/stat.h>
 
 using namespace png;
 
 //#define SPEECH_FILE_PATH "images/otakon_speech.txt"
 #define SPRITE_FILE_PATH "../images"
-#define DEFAULT_SPRITE_FILE_PATH "../bin/default.png"
+#define DEFAULT_SPRITE_FILE_PATH "../images/default.png"
 #define CONFIG_FILE_PATH "../config/config.txt"
 #define CONFIG_SWAP_FILE_PATH "../config/cfg_swp"
 #define DOCS_DIR_PATH "../docs/"
@@ -336,6 +340,36 @@ void GetExecutableAbsPath(char* abspath_out, size_t abspath_max_len, char *relpa
     //printf("Absolute path to executable is: %s\n\r", abspath_out); //DEBUG
 }
 
+void AssureDir(const char* rel_dir_path) {
+    // make sure the given directory exists.
+    char temp_path_buff[PATH_MAX];
+    sprintf(temp_path_buff, "%s/%s", abs_exe_path, rel_dir_path);
+    /*DIR* d = opendir(temp_path_buff);
+    if (d) {
+        closedir(d); // directory exists, close it.
+    } else if (errno == ENOENT) {
+        // directory does not exist, create it.
+
+    } else {
+        // opendir() failed for other reasons.
+        fprintf(stderr, "[OTAKON][ERROR]:Failed to open \"%s\"\n\r, likely due to permission issues.", rel_dir_path);
+    }*/
+    struct stat st = {0};
+    if (stat(temp_path_buff, &st) == -1) {
+        mkdir(temp_path_buff, 0700);
+    }
+}
+
+bool fExists(const char* abs_file_path) {
+    // make sure the given file exists.
+    FILE* f = fopen(abs_file_path, "rb");
+    if (f) {
+        fclose(f); return 1;
+    } else {
+        return 0;
+    }
+}
+
 
 // ##################### OTAKON RUN
 
@@ -461,13 +495,24 @@ int OtakonRun() {
 	if (orderMode == MODE_ORDER || orderMode == MODE_REVERSE) SaveCounterValue(counter);
 
     char sprite_path_buff[PATH_MAX];
-    sprintf(sprite_path_buff, "%s/%s", abs_exe_path, DEFAULT_SPRITE_FILE_PATH);
+    sprintf(sprite_path_buff, "%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx]);
 	image<rgba_pixel> *sprite;
+    bool default_img_fallback = false;
 	if (tot_filenames > 0) {
-		// load chosen image.
-		sprite = new image<rgba_pixel>(string_format("%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx]));
+        if (fExists(sprite_path_buff)) {
+            // load chosen image.
+            sprite = new image<rgba_pixel>(sprite_path_buff/*string_format("%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx])*/);
+        } else {
+            fprintf(stderr, "[OTAKON][ERROR]:Could not open image \"%s\".\n\r", sprite_path_buff);
+            default_img_fallback = true;
+        }
 	} else {
+        fprintf(stderr, "[OTAKON][WARN]:LIST of png filenames was not provided or is void.\n\r");
+        default_img_fallback = true;
+    }
+	if (default_img_fallback) {
 		// make sure that the default image exists.
+        sprintf(sprite_path_buff, "%s/%s", abs_exe_path, DEFAULT_SPRITE_FILE_PATH);
 		FILE* temp = fopen(sprite_path_buff, "rb");
 		if (!temp) {
 			temp = fopen(sprite_path_buff, "wb");
@@ -475,7 +520,6 @@ int OtakonRun() {
 		}
 		fclose(temp);
 		sprite = new image<rgba_pixel>(sprite_path_buff);
-		fprintf(stderr, "[ERROR][OTAKON]:LIST of png filenames was not provided.\n\r");
 	}
     #define MSGGRAY 30
     printf("\033[0;38;2;%d;%d;%d;48;2;0;0;0m[OTAKON]:printing image to terminal.\033[0m\n\r", MSGGRAY, MSGGRAY, MSGGRAY);
@@ -511,13 +555,18 @@ int main(int argc, char* argv[]) {
 	bgColor.blue = ALPHA_DEFAULT_BLUE;
     // initialize edge width.
     edgeWidth = DEFAULT_EDGE_WIDTH;
+    // make sure config directory exists.
+    AssureDir("../config");
+    AssureDir("../images");
+    AssureDir("../docs");
 	// make sure config file exists.
     char cfg_file_path_buff[PATH_MAX];
     sprintf(cfg_file_path_buff, "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
 	FILE* cfgFile = fopen(cfg_file_path_buff, "rb");
 	if (!cfgFile) {
 		cfgFile = fopen(cfg_file_path_buff, "wb");
-		fprintf(cfgFile, "MODE = RANDOM\n\rLIST = {\n\rdefault\n\r}");
+		fprintf(cfgFile, "MODE RANDOM\nALPHA 0,0,0\nEDGE 0\nLIST = {\ndefault\n}");
+        fprintf(stderr, "[OTAKON][WARN]:Configuration file not found, falling back to default config.");
 	}
 	fclose(cfgFile);
 
