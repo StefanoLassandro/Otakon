@@ -40,6 +40,7 @@ using namespace png;
 
 // Global variables.
 color bgColor;
+bool useBG;
 int edgeWidth;
 char abs_exe_path[PATH_MAX];
 
@@ -90,6 +91,7 @@ basic_rgba_pixel<unsigned char> get_pixel_w_edges(int x, int y, image<rgba_pixel
 }
 
 int PrintRasterTerm_double(image<rgba_pixel> *sprite) {
+    // For future reference: https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
 	if (!sprite->get_width() || !sprite->get_height()) return RETV_FAIL;
     // fprintf(stderr, "\033[0;38;2;255;255;255;48;2;0;0;0mEDGEW:%d\033[0m\n\r", edgeWidth); //DEBUG
     //edgeWidth = 0; //DEBUG
@@ -102,11 +104,19 @@ int PrintRasterTerm_double(image<rgba_pixel> *sprite) {
 			if (y+1 < sprite->get_height()) {
 				btm = get_pixel_w_edges(x, y+1, sprite);
 			} else {
-				btm = (basic_rgba_pixel<unsigned char>){bgColor.red, bgColor.green, bgColor.blue, 255};
+				btm = (basic_rgba_pixel<unsigned char>){0, 0, 0, 0};
 			}
-			BlendAlphaWithColor(&top, bgColor);
-			BlendAlphaWithColor(&btm, bgColor);
-			printf("\033[0;38;2;%d;%d;%d;48;2;%d;%d;%dm▀\033[0m", top.red, top.green, top.blue, btm.red, btm.green, btm.blue);
+			if (useBG || (top.alpha > 0 && btm.alpha > 0)) {
+                BlendAlphaWithColor(&top, bgColor);
+                BlendAlphaWithColor(&btm, bgColor);
+                printf("\033[0;38;2;%d;%d;%d;48;2;%d;%d;%dm▀\033[0m", top.red, top.green, top.blue, btm.red, btm.green, btm.blue);
+            } else {
+                // Don't use BG, keep transparent bg/fg of char for transparent pixels.
+                printf("\033[0m"); fflush(stdout); // reset background.
+                if (top.alpha == 0 && btm.alpha == 0) printf(" ");
+                else if (btm.alpha == 0) printf("\033[38;2;%d;%d;%dm▀\033[0m", top.red, top.green, top.blue);
+                else if (top.alpha == 0) printf("\033[38;2;%d;%d;%dm▄\033[0m", btm.red, btm.green, btm.blue);
+            }
 		}
 		printf("\n");
 	}
@@ -443,6 +453,7 @@ int OtakonRun() {
                         } else if (len == -1) return 1;
                         *(temp_rgb_ptrs[i]) = atoi(&(temp_buff[0]));
                     }
+                    useBG = true;
 				}
 				break;
             case COMM_EDGE:
@@ -532,7 +543,7 @@ int OtakonRun() {
 		sprite = new image<rgba_pixel>(sprite_path_buff);
 	}
     #define MSGGRAY 30
-    printf("\033[0;38;2;%d;%d;%d;48;2;0;0;0m[OTAKON]:printing image to terminal.\033[0m\n\r", MSGGRAY, MSGGRAY, MSGGRAY);
+    printf("\033[0m\033[38;2;%d;%d;%dm[OTAKON]:printing image to terminal.\033[0m\n\r", MSGGRAY, MSGGRAY, MSGGRAY);
 	PrintRasterTerm_double(sprite);
 	delete sprite;
 
@@ -563,6 +574,7 @@ int main(int argc, char* argv[]) {
 	bgColor.red = ALPHA_DEFAULT_RED;
 	bgColor.green = ALPHA_DEFAULT_GREEN;
 	bgColor.blue = ALPHA_DEFAULT_BLUE;
+    useBG = false; // by default, keep image transparent.
     // initialize edge width.
     edgeWidth = DEFAULT_EDGE_WIDTH;
     // make sure config directory exists.
@@ -577,8 +589,8 @@ int main(int argc, char* argv[]) {
     FILE* cfgFile = fopen(cfg_file_path_buff, "rb");
 	if (!cfgFile) {
 		cfgFile = fopen(cfg_file_path_buff, "wb");
-		fprintf(cfgFile, "MODE RANDOM\nALPHA 0,0,0\nEDGE 0\nLIST = {\ndefault\n}");
-        fprintf(stderr, "[OTAKON][WARN]:Configuration file not found, falling back to default config.");
+		fprintf(cfgFile, "MODE RANDOM\nEDGE 0\nLIST = {\ndefault\n}");
+        fprintf(stderr, "[OTAKON][WARN]:Configuration file not found, falling back to default config.\n\r");
 	}
 	fclose(cfgFile);
 
