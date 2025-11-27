@@ -1,1 +1,4 @@
 bin/
+config/
+images/*
+!images/happy.png
