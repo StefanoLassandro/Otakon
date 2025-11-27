@@ -271,8 +271,10 @@ void ConfigRm(const char* str) {
     // NOTE: f must be opened in rwb mode.
     char old_file_path[PATH_MAX];
     char new_file_path[PATH_MAX];
-    sprintf(old_file_path, "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
-    sprintf(new_file_path, "%s/%s", abs_exe_path, CONFIG_SWAP_FILE_PATH);
+    int ret = snprintf(old_file_path, sizeof(old_file_path), "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
+    assert(ret < PATH_MAX);
+    ret = snprintf(new_file_path, sizeof(new_file_path), "%s/%s", abs_exe_path, CONFIG_SWAP_FILE_PATH);
+    assert(ret < PATH_MAX);
     FILE* of = fopen(old_file_path, "rb"); //old file.
     FILE* nf = fopen(new_file_path, "wb"); //new file.
 
@@ -302,7 +304,8 @@ void ConfigRm(const char* str) {
 
 void ConfigAppend(const char* str) {
     char config_file_path[PATH_MAX];
-    sprintf(config_file_path, "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
+    int ret = snprintf(config_file_path, PATH_MAX, "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
+    assert(ret < PATH_MAX);
     FILE* f = fopen(config_file_path, "a");
     fprintf(f, "%s", str);
     fclose(f);
@@ -310,8 +313,9 @@ void ConfigAppend(const char* str) {
 
 void LoadCounterValue(int* counter_ptr) {
     char counter_file_path_buff[PATH_MAX];
-    sprintf(counter_file_path_buff, "%s/%s", abs_exe_path, COUNTER_FILE_PATH);
-	FILE* counterFile = fopen(counter_file_path_buff, "rb");
+    int ret = snprintf(counter_file_path_buff, sizeof(counter_file_path_buff), "%s/%s", abs_exe_path, COUNTER_FILE_PATH);
+	assert(ret < PATH_MAX);
+    FILE* counterFile = fopen(counter_file_path_buff, "rb");
 	if (!counterFile) {
 		counterFile = fopen(counter_file_path_buff, "wb");
 		int temp = 0; fwrite(&temp, sizeof(temp), 1, counterFile); // new count start from zero.
@@ -324,8 +328,9 @@ void LoadCounterValue(int* counter_ptr) {
 
 void SaveCounterValue(int counter) {
     char counter_file_path_buff[PATH_MAX];
-    sprintf(counter_file_path_buff, "%s/%s", abs_exe_path, COUNTER_FILE_PATH);
-	FILE* counterFile = fopen(counter_file_path_buff, "wb");
+    int ret = snprintf(counter_file_path_buff, sizeof(counter_file_path_buff), "%s/%s", abs_exe_path, COUNTER_FILE_PATH);
+	assert(ret < PATH_MAX);
+    FILE* counterFile = fopen(counter_file_path_buff, "wb");
 	fwrite(&counter, sizeof(counter), 1, counterFile);
 	fclose(counterFile);
 }
@@ -343,13 +348,14 @@ void GetExecutableAbsPath(char* abspath_out, size_t abspath_max_len, char *relpa
 void AssureDir(const char* rel_dir_path) {
     // make sure the given directory exists.
     char temp_path_buff[PATH_MAX];
-    sprintf(temp_path_buff, "%s/%s", abs_exe_path, rel_dir_path);
+    int ret = snprintf(temp_path_buff, sizeof(temp_path_buff), "%s/%s", abs_exe_path, rel_dir_path);
+    assert(ret < PATH_MAX);
     /*DIR* d = opendir(temp_path_buff);
     if (d) {
         closedir(d); // directory exists, close it.
     } else if (errno == ENOENT) {
         // directory does not exist, create it.
-
+counter_file_path_buff
     } else {
         // opendir() failed for other reasons.
         fprintf(stderr, "[OTAKON][ERROR]:Failed to open \"%s\"\n\r, likely due to permission issues.", rel_dir_path);
@@ -375,8 +381,9 @@ bool fExists(const char* abs_file_path) {
 
 int OtakonRun() {
     char cfg_file_path_buff[PATH_MAX];
-    sprintf(cfg_file_path_buff, "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
-	FILE* cfgFile = fopen(cfg_file_path_buff, "rb");
+    int ret = snprintf(cfg_file_path_buff, PATH_MAX, "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
+	assert(ret < PATH_MAX);
+    FILE* cfgFile = fopen(cfg_file_path_buff, "rb");
 
 	order_t orderMode = MODE_RANDOM; // default selection mode
 
@@ -495,8 +502,10 @@ int OtakonRun() {
 	if (orderMode == MODE_ORDER || orderMode == MODE_REVERSE) SaveCounterValue(counter);
 
     char sprite_path_buff[PATH_MAX];
-    sprintf(sprite_path_buff, "%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx]);
-	image<rgba_pixel> *sprite;
+    ret = snprintf(sprite_path_buff, sizeof(sprite_path_buff), "%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx]);
+    assert(ret < PATH_MAX);
+
+    image<rgba_pixel> *sprite;
     bool default_img_fallback = false;
 	if (tot_filenames > 0) {
         if (fExists(sprite_path_buff)) {
@@ -512,8 +521,9 @@ int OtakonRun() {
     }
 	if (default_img_fallback) {
 		// make sure that the default image exists.
-        sprintf(sprite_path_buff, "%s/%s", abs_exe_path, DEFAULT_SPRITE_FILE_PATH);
-		FILE* temp = fopen(sprite_path_buff, "rb");
+        ret = snprintf(sprite_path_buff, PATH_MAX, "%s/%s", abs_exe_path, DEFAULT_SPRITE_FILE_PATH);
+		assert(ret < PATH_MAX);
+        FILE* temp = fopen(sprite_path_buff, "rb");
 		if (!temp) {
 			temp = fopen(sprite_path_buff, "wb");
 			fwrite(&default_sprite_file_hex, sizeof(default_sprite_file_hex), 1, temp);
@@ -561,8 +571,10 @@ int main(int argc, char* argv[]) {
     AssureDir("../docs");
 	// make sure config file exists.
     char cfg_file_path_buff[PATH_MAX];
-    sprintf(cfg_file_path_buff, "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
-	FILE* cfgFile = fopen(cfg_file_path_buff, "rb");
+    int ret = snprintf(cfg_file_path_buff, sizeof(cfg_file_path_buff), "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
+	assert(ret < PATH_MAX);
+
+    FILE* cfgFile = fopen(cfg_file_path_buff, "rb");
 	if (!cfgFile) {
 		cfgFile = fopen(cfg_file_path_buff, "wb");
 		fprintf(cfgFile, "MODE RANDOM\nALPHA 0,0,0\nEDGE 0\nLIST = {\ndefault\n}");
@@ -570,7 +582,7 @@ int main(int argc, char* argv[]) {
 	}
 	fclose(cfgFile);
 
-    char prompt_buff[8192];
+    char prompt_buff[PATH_MAX + 32];
 	if (argc == 1) {
         printf("[OTAKON]:Write \"otakon help\" to show available commands.\n\r");
     } else {
@@ -596,7 +608,7 @@ int main(int argc, char* argv[]) {
             // otakon conf <conf_arg>
             if (argc > 2 && strcmp(argv[2], "show")) {
                 if (!strcmp(argv[2], "e") || !strcmp(argv[2], "edit")) {
-                    sprintf(prompt_buff, "$EDITOR %s", cfg_file_path_buff);
+                    snprintf(prompt_buff, sizeof(prompt_buff), "$EDITOR %s", cfg_file_path_buff);
                     system(prompt_buff);
                 }
                 else if (!strcmp(argv[2], "kill") || !strcmp(argv[2], "disable")) {

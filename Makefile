@@ -1,7 +1,7 @@
 
 
 
-CFLAGS = -O2 -lpng
+CFLAGS = -O3 -lpng
 
 .PHONY: all
 all: bin/otakon
@@ -12,5 +12,5 @@ bin:
 bin/otakon: src/otakon.cpp | bin
 	g++ ./src/otakon.cpp -o ./bin/otakon $(CFLAGS)
 
-clear:
+clean:
 	rm ./bin/otakon
