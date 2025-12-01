@@ -10,6 +10,9 @@ all: bin/otakon docs/otakon_docs.pdf
 .PHONY: docs
 docs: docs/otakon_docs.pdf
 
+.PHONY: otakon
+otakon: bin/otakon
+
 bin:
 	mkdir -p bin
 
