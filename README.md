@@ -1,3 +1,7 @@
+Can be configured to choose from a list of images in a random order,
+and can be easily switched on and off from terminal (for use on
+terminals supporting truecolor).
+
 ## DOCUMENTATION
 Documentation can be found inside ```docs/otakon_docs.md```.
 
