@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <time.h> // needed for initializing srand()
 //#include <dirent.h> // necessary for directory control.
-#include <errno.h>
+//#include <errno.h>
 #include <sys/types.h> // necessary for directory control.
 #include <sys/stat.h>
 
@@ -208,10 +208,11 @@ int fParseNextWord(char* buff, int maxlen, FILE* f) {
 	//        ^function exits with fpointer here.
     // NOTE: returns -1 in case of error.
 	fProceedUntilName(f);
-	char c;
+	int c;
 	int len = 0;
-	while (!feof(f)) {
+	while (true) {
 		c = fgetc(f);
+        if (c == EOF) break;
 		if (CharIsSpacing(c)) {
 			break;
 		} else {
