@@ -138,6 +138,7 @@ enum command_t {
 	COMM_LIST,    // set list of filenames of the images.
 	COMM_KILL,    // kill the program before printing.
 	COMM_ALPHA,   // set alpha color.
+    COMM_GROUP,   // select a single/any group.
 	COMM_EDGE     // set the width of the edge around the image.
 };
 
@@ -147,6 +148,7 @@ const char *commands[] {
 	"LIST",
 	"KILL",
 	"ALPHA",
+    "GROUP",
     "EDGE"
 };
 
@@ -160,8 +162,12 @@ const char *modes[] {
 
 #define MAX_LIST_LEN 256
 #define MAX_FILENAME_LENGHT 256
-char filenames[MAX_LIST_LEN][MAX_FILENAME_LENGHT+1];
-int tot_filenames = 0;
+#define MAX_GROUPNAME_LENGHT 256
+#define MAX_GROUPS 8
+char filenames[MAX_GROUPS][MAX_LIST_LEN][MAX_FILENAME_LENGHT+1];
+char groupnames[MAX_GROUPS][MAX_GROUPNAME_LENGHT+1];
+int tot_filenames[MAX_GROUPS];
+int tot_groupnames = 1;
 
 const uint8_t default_sprite_file_hex[] = {
 	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
@@ -253,7 +259,8 @@ command_t fParseNextCommand(FILE* f, char* buff) {
 				case 1: return COMM_LIST;
 				case 2: return COMM_KILL;
                 case 3: return COMM_ALPHA;
-                case 4: return COMM_EDGE;
+                case 4: return COMM_GROUP;
+                case 5: return COMM_EDGE;
 			}
 		}
 	}
@@ -387,6 +394,14 @@ bool fExists(const char* abs_file_path) {
     }
 }
 
+int GetGroupIdx(char* groupname) {
+    // NOTE: groupnames[0] is the groupname of the files that are not in a group.
+    for (size_t i = 0; i < tot_groupnames; i++) {
+        if (strcmp(groupnames[i], groupname) == 0) return i;
+    }
+    return -1; // not found
+}
+
 
 // ##################### OTAKON RUN
 
@@ -395,6 +410,19 @@ int OtakonRun() {
     int ret = snprintf(cfg_file_path_buff, PATH_MAX, "%s/%s", abs_exe_path, CONFIG_FILE_PATH);
 	assert(ret < PATH_MAX);
     FILE* cfgFile = fopen(cfg_file_path_buff, "rb");
+
+    groupnames[0][0] = 'U';
+    groupnames[0][1] = 'N';
+    groupnames[0][2] = 'G';
+    groupnames[0][3] = 'R';
+    groupnames[0][4] = 'O';
+    groupnames[0][5] = 'U';
+    groupnames[0][6] = 'P';
+    groupnames[0][7] = 'E';
+    groupnames[0][8] = 'D';
+    groupnames[0][9] = '\0'; // groupname[0] is "UNGROUPED".
+    char chosen_group_name[MAX_GROUPS][MAX_GROUPNAME_LENGHT+1] = {'A', 'N', 'Y', '\0'}; // chosen group name is "ANY" by default.
+    int tot_chosen_group_names = 0;
 
 	order_t orderMode = MODE_RANDOM; // default selection mode
 
@@ -417,26 +445,67 @@ int OtakonRun() {
 				break;
 			default:
 			case COMM_LIST:
-				//printf("--> Recognized command (LIST)\n\r"); fflush(stdout); //DEBUG
-				tot_filenames = 0;
-				fProceedUntil(cfgFile, '{');
-				fProceedUntilName(cfgFile);
-				// parse names that make up the list of filenames.
-				while (!feof(cfgFile) && tot_filenames < MAX_LIST_LEN) {
-					char c = ' ';
-					int temp_len = 0;
-					while (!feof(cfgFile) && temp_len < MAX_FILENAME_LENGHT) {
-						c = fgetc(cfgFile);
-						if (CharIsSpacing(c) || c == '}') break;
-						filenames[tot_filenames][temp_len++] = c;
-					}
-					if (c == '}') break;
-					if (temp_len > 0) {
-						if (temp_len >= MAX_FILENAME_LENGHT) temp_len = MAX_FILENAME_LENGHT - 1;
-						filenames[tot_filenames][temp_len] = '\0';
-						tot_filenames++;
-					}
-				}
+                {
+                    //printf("--> Recognized command (LIST)\n\r"); fflush(stdout); //DEBUG
+                    for (int i = 0; i < MAX_GROUPS; i++) tot_filenames[i] = 0;
+                    tot_groupnames = 1;
+                    char filename_buff[MAX_FILENAME_LENGHT];
+                    fProceedUntil(cfgFile, '{');
+                    fProceedUntilName(cfgFile);
+                    // parse names that make up the list of filenames.
+                    int temp_len = 0;
+                    int temp_group_idx = 0;
+                    while (!feof(cfgFile)) {
+                        char c = ' ';
+                        temp_len = 0;
+
+                        while (!feof(cfgFile) && temp_len < MAX_FILENAME_LENGHT) {
+                            c = fgetc(cfgFile);
+                            if (
+                                CharIsSpacing(c) ||
+                                c == '}'         ||
+                                (
+                                    c == '/'     &&
+                                    temp_group_idx == 0 // NOTE: more than one layer of grouping is not supported, treat other grouping layers as a path that is part of the filename.
+                                )
+                            ) break;
+                            filename_buff[temp_len++] = c;
+                        }
+                        if (c == '}') break;
+                        if (c == '/') {
+                            if (temp_len > 0) {
+                                // interpret contents of filename_buff as the group name.
+                                if (temp_len >= MAX_GROUPNAME_LENGHT) temp_len = MAX_GROUPNAME_LENGHT - 1;
+                                filename_buff[temp_len] = '\0';
+                                if (strcmp(filename_buff, "UNGROUPED") == 0) {
+                                    fprintf(stderr, "[OTAKON][WARNING]:Group named \"UNGROUPED\" should be reserved for un-grouped files.\n");
+                                }
+                                temp_group_idx = GetGroupIdx(filename_buff);
+                                if (temp_group_idx == -1) {
+                                    // new group found.
+                                    if (tot_groupnames >= MAX_GROUPS) {
+                                        fprintf(stderr, "[OTAKON][ERROR]:Cannot specify more than %d groups.\n\r", MAX_GROUPS); return 1;
+                                    }
+                                    int i; for (i = 0; i < temp_len; i++) { groupnames[tot_groupnames][i] = filename_buff[i]; }
+                                    groupnames[tot_groupnames][i] = '\0';
+                                    temp_group_idx = tot_groupnames;
+                                    tot_groupnames++;
+                                }
+                            }
+                        } else {
+                            // interpret contents of filename_buff as the filename.
+                            if (temp_len > 0 && tot_filenames[temp_group_idx] < MAX_LIST_LEN) {
+                                if (temp_len >= MAX_FILENAME_LENGHT) temp_len = MAX_FILENAME_LENGHT - 1;
+                                for (int i = 0; i < temp_len; i++) {
+                                    filenames[temp_group_idx][tot_filenames[temp_group_idx]][i] = filename_buff[i];
+                                }
+                                filenames[temp_group_idx][tot_filenames[temp_group_idx]][temp_len] = '\0';
+                                tot_filenames[temp_group_idx]++;
+                            }
+                            temp_group_idx = 0;
+                        }
+                    }
+                }
 				break;
 			case COMM_ALPHA:
 				{
@@ -474,6 +543,29 @@ int OtakonRun() {
 			case COMM_KILL:
 				fclose(cfgFile);
 				return 0;
+            case COMM_GROUP:
+                {
+                    char temp_groupname_buff[MAX_GROUPNAME_LENGHT+1];
+                    int len = fParseNextWord(&(temp_groupname_buff[0]), MAX_GROUPNAME_LENGHT, cfgFile);
+                    if (len == 0) {
+                        fprintf(stderr, "[OTAKON][ERROR]:Missing GROUP name information.\n\r"); return 1;
+                    } else if (len == -1) return 1;
+
+                    bool already_chosen = false;
+                    for (size_t i = 0; i < tot_chosen_group_names; i++) {
+                        if (strcmp(temp_groupname_buff, chosen_group_name[i]) == 0) {
+                            already_chosen = true; break;
+                        }
+                    }
+
+                    if (!already_chosen) {
+                        /*if (tot_chosen_group_names >= MAX_GROUPS) {
+                            fprintf(stderr, "[OTAKON][ERROR]:Cannot specify more than %d groups.\n\r", MAX_GROUPS); return 1;
+                        }*/
+                        strcpy(&(chosen_group_name[tot_chosen_group_names++][0]), &(temp_groupname_buff[0]));
+                    }
+                }
+                break;
 			case COMM_UNKNOWN:
 				fprintf(stderr, "[ERROR][OTAKON]:Unrecognized command in config file (\"%s\").\n\r", &(comm_name_buff[0]));
 				return 1;
@@ -481,31 +573,85 @@ int OtakonRun() {
 	}
 	fclose(cfgFile);
 
+    //DEBUG START
+    /*for (int i = 0; i < tot_groupnames; i++) {
+        fprintf(stderr, "groupnames[%d]:\"%s\" \n", i, groupnames[i]);
+    }
+    for (int i = 0; i < tot_chosen_group_names; i++) {
+        fprintf(stderr, "chosen_groupname[%d]:\"%s\" \n", i, chosen_group_name[i]);
+    }*/
+    //DEBUG END
+
 	// choose an image from the list of filenames, following the chosen criteria.
 	int chosenIdx = 0;
+    int chosenGroupIdx = -1;
+    bool chosenGroups[MAX_GROUPS] = { false };
+    int distinct_choosable_groups_count = 0;
+    for (int i = 0; i < tot_chosen_group_names; i++) {
+        if (strcmp(chosen_group_name[i], "ANY") == 0) {
+            chosenGroupIdx = rand() % tot_groupnames;
+        } else {
+            int idx = GetGroupIdx(chosen_group_name[i]);
+            if (idx == -1) {
+                fprintf(stderr, "[OTAKON][ERROR]:Specified group \"%s\" not found in the list, falling back to ungrouped files.\n", chosen_group_name[i]);
+                idx = 0;
+                //return 1;
+            }
+            if (!chosenGroups[idx]) {
+                chosenGroups[idx] = true;
+                distinct_choosable_groups_count++;
+            }
+        }
+    }
+
+    //DEBUG START
+    /*for (int i = 0; i < MAX_GROUPS; i++) {
+        fprintf(stderr, "chosenGroups[%d] = %s\n\r", i, chosenGroups[i] ? "true" : "false");
+    }*/
+    //DEBUG END
+
+    if(chosenGroupIdx == -1) {
+        int sel = 1 + (rand() % tot_chosen_group_names);
+        //fprintf(stderr, "tot_chosen_group_names = %d, sel = %d\n\r", tot_chosen_group_names, sel); //DEBUG
+        int i = 0, j = 0;
+        for (;; j++) {
+            if (chosenGroups[j]) {
+                i++;
+            }
+            if (i == sel) {
+              chosenGroupIdx = j;
+              break;
+            }
+        }
+    }
+
+    // [TODO][TOFIX]: selection of image is not fair! we should choose from an index of all images from all groups.
+
+    //fprintf(stderr, "chosenGroupIdx = %d\n\r", chosenGroupIdx); //DEBUG
+
 	int counter = 0;
 
-	if (tot_filenames > 0) {
+	if (tot_filenames[chosenGroupIdx] > 0) {
 		// open counter file and get counter value.
 		if (orderMode == MODE_ORDER || orderMode == MODE_REVERSE) LoadCounterValue(&counter);
 		switch (orderMode) {
 			default:
 			case MODE_RANDOM:
-				chosenIdx = rand() % tot_filenames;
+				chosenIdx = rand() % tot_filenames[chosenGroupIdx];
 				break;
 			case MODE_FIRST:
 				chosenIdx = 0;
 				break;
 			case MODE_ORDER:
-				if (counter >= tot_filenames) counter = tot_filenames-1;
+				if (counter >= tot_filenames[chosenGroupIdx]) counter = tot_filenames[chosenGroupIdx]-1;
 				chosenIdx = counter;
-				if (++counter >= tot_filenames) counter = 0;
+				if (++counter >= tot_filenames[chosenGroupIdx]) counter = 0;
 				//save counter to file.
 				break;
 			case MODE_REVERSE:
-				if (counter >= tot_filenames) counter = tot_filenames-1;
+				if (counter >= tot_filenames[chosenGroupIdx]) counter = tot_filenames[chosenGroupIdx]-1;
 				chosenIdx = counter;
-				if (--counter < 0) counter = tot_filenames-1;
+				if (--counter < 0) counter = tot_filenames[chosenGroupIdx]-1;
 				break;
 		}
 	}
@@ -514,12 +660,13 @@ int OtakonRun() {
 	if (orderMode == MODE_ORDER || orderMode == MODE_REVERSE) SaveCounterValue(counter);
 
     char sprite_path_buff[PATH_MAX];
-    ret = snprintf(sprite_path_buff, sizeof(sprite_path_buff), "%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx]);
+    const char* temp_chosen_group_path = (chosenGroupIdx > 0) ? groupnames[chosenGroupIdx] : "";
+    ret = snprintf(sprite_path_buff, sizeof(sprite_path_buff), "%s/%s/%s%s%s.png", abs_exe_path, SPRITE_FILE_PATH, temp_chosen_group_path, (chosenGroupIdx > 0)?"/":"", filenames[chosenGroupIdx][chosenIdx]);
     assert(ret < PATH_MAX);
 
     image<rgba_pixel> *sprite;
     bool default_img_fallback = false;
-	if (tot_filenames > 0) {
+	if (tot_filenames[chosenGroupIdx] > 0) {
         if (fExists(sprite_path_buff)) {
             // load chosen image.
             sprite = new image<rgba_pixel>(sprite_path_buff/*string_format("%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx])*/);
@@ -548,7 +695,7 @@ int OtakonRun() {
 	PrintRasterTerm_double(sprite);
 	delete sprite;
 
-	return (tot_filenames == 0);
+	return (tot_filenames[chosenGroupIdx] == 0);
 }
 
 #define HELP_SCREEN_STR "\
@@ -601,7 +748,10 @@ int main(int argc, char* argv[]) {
     } else {
         if (!strcmp(argv[1], "r") || !strcmp(argv[1], "run")) {
             // run Otakon.
-            return OtakonRun();
+            int repeat = (argc > 2) ? atoi(argv[2]) : 1;
+            for (int i = 0, ret; i < repeat && (ret == 0 || i == 0); i++) {
+                ret = OtakonRun();
+            }
         }
         else if (!strcmp(argv[1], "h") || !strcmp(argv[1], "help")) {
             // show help screen.

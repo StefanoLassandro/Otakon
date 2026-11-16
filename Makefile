@@ -1,7 +1,7 @@
 
 
 
-CFLAGS = -O3 -lpng
+CFLAGS = -O2 -g3 -lpng
 CC = g++
 
 .PHONY: all
