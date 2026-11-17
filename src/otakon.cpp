@@ -19,6 +19,8 @@
 
 using namespace png;
 
+//#define CHANCE_NORMALIZED(norm_chance) (norm_chance == 1.f || (((float)(rand()%1000))/1000.f) < (float)(norm_chance)) // 0.0 <= norm_chance <= 1.0
+
 //#define SPEECH_FILE_PATH "images/otakon_speech.txt"
 #define SPRITE_FILE_PATH "../images"
 #define DEFAULT_SPRITE_FILE_PATH "../images/default.png"
@@ -132,23 +134,25 @@ enum order_t {
 };
 
 enum command_t {
-	COMM_UNKNOWN, // for unrecognized commands.
-	COMM_NONE,    // for when there's no next command.
-	COMM_MODE,    // set the selection mode.
-	COMM_LIST,    // set list of filenames of the images.
-	COMM_KILL,    // kill the program before printing.
-	COMM_ALPHA,   // set alpha color.
-    COMM_GROUP,   // select a single/any group.
-	COMM_EDGE     // set the width of the edge around the image.
+	COMM_UNKNOWN,  // for unrecognized commands.
+	COMM_NONE,     // for when there's no next command.
+	COMM_MODE,     // set the selection mode.
+	COMM_LIST,     // set list of filenames of the images.
+	COMM_KILL,     // kill the program before printing.
+	COMM_ALPHA,    // set alpha color.
+    COMM_GROUP,    // select a single/any group.
+    COMM_FAIRNESS, // set fariness of selection (fariness by group or by single images)
+	COMM_EDGE      // set the width of the edge around the image.
 };
 
-#define MAX_COMMAND_LENGHT 5 // excluding terminator
+#define MAX_COMMAND_LENGHT 8 // excluding terminator
 const char *commands[] {
 	"MODE",
 	"LIST",
 	"KILL",
 	"ALPHA",
     "GROUP",
+    "FAIRNESS",
     "EDGE"
 };
 
@@ -260,7 +264,8 @@ command_t fParseNextCommand(FILE* f, char* buff) {
 				case 2: return COMM_KILL;
                 case 3: return COMM_ALPHA;
                 case 4: return COMM_GROUP;
-                case 5: return COMM_EDGE;
+                case 5: return COMM_FAIRNESS;
+                case 6: return COMM_EDGE;
 			}
 		}
 	}
@@ -423,6 +428,7 @@ int OtakonRun() {
     groupnames[0][9] = '\0'; // groupname[0] is "UNGROUPED".
     char chosen_group_name[MAX_GROUPS][MAX_GROUPNAME_LENGHT+1] = {'A', 'N', 'Y', '\0'}; // chosen group name is "ANY" by default.
     int tot_chosen_group_names = 0;
+    bool fairness_by_group = false; // true: fairness by group (every group has same chance of being chosen) | false: fairness by singles (every image has same chance of being chosen) [false by default].
 
 	order_t orderMode = MODE_RANDOM; // default selection mode
 
@@ -537,6 +543,7 @@ int OtakonRun() {
                     edgeWidth = atoi(&(temp_buff[0]));
                     if (edgeWidth < 0) edgeWidth = 0;
 				}
+				break;
 			case COMM_NONE:
 				// no more commands, do nothing.
 				break;
@@ -566,6 +573,23 @@ int OtakonRun() {
                     }
                 }
                 break;
+            case COMM_FAIRNESS:
+                {
+                    char temp_arg_buff[MAX_GROUPNAME_LENGHT+1];
+                    int len = fParseNextWord(&(temp_arg_buff[0]), MAX_GROUPNAME_LENGHT, cfgFile);
+                    if (strcmp(temp_arg_buff, "GROUPS") == 0)
+                        fairness_by_group = true;
+                    else if (strcmp(temp_arg_buff, "SINGLES") == 0)
+                        fairness_by_group = false;
+                    else {
+                        if (strlen(temp_arg_buff) > 0) {
+                            fprintf(stderr, "[OTAKON][ERROR]:Invalid FAIRNESS argument (\"%s\"), expected \"GROUPS\" or \"SINGLES\"\n\r", temp_arg_buff);
+                        } else {
+                            fprintf(stderr, "[OTAKON][ERROR]:Missing FAIRNESS argument, expected \"GROUPS\" or \"SINGLES\"\"GROUPS\" or \"SINGLES\"\n\r");
+                        }
+                    }
+                }
+                break;
 			case COMM_UNKNOWN:
 				fprintf(stderr, "[ERROR][OTAKON]:Unrecognized command in config file (\"%s\").\n\r", &(comm_name_buff[0]));
 				return 1;
@@ -582,20 +606,21 @@ int OtakonRun() {
     }*/
     //DEBUG END
 
-	// choose an image from the list of filenames, following the chosen criteria.
+	// choose an image from the list of filenames, following the given criteria.
 	int chosenIdx = 0;
-    int chosenGroupIdx = -1;
     bool chosenGroups[MAX_GROUPS] = { false };
     int distinct_choosable_groups_count = 0;
     for (int i = 0; i < tot_chosen_group_names; i++) {
         if (strcmp(chosen_group_name[i], "ANY") == 0) {
-            chosenGroupIdx = rand() % tot_groupnames;
+            for (int j = 0; j < MAX_GROUPS; j++) { chosenGroups[j] = true; }
+            distinct_choosable_groups_count = tot_chosen_group_names;
+            break;
         } else {
             int idx = GetGroupIdx(chosen_group_name[i]);
             if (idx == -1) {
                 fprintf(stderr, "[OTAKON][ERROR]:Specified group \"%s\" not found in the list, falling back to ungrouped files.\n", chosen_group_name[i]);
                 idx = 0;
-                //return 1;
+                //return 1; // critical?
             }
             if (!chosenGroups[idx]) {
                 chosenGroups[idx] = true;
@@ -610,54 +635,89 @@ int OtakonRun() {
     }*/
     //DEBUG END
 
-    if(chosenGroupIdx == -1) {
-        int sel = 1 + (rand() % tot_chosen_group_names);
-        //fprintf(stderr, "tot_chosen_group_names = %d, sel = %d\n\r", tot_chosen_group_names, sel); //DEBUG
-        int i = 0, j = 0;
-        for (;; j++) {
-            if (chosenGroups[j]) {
-                i++;
-            }
-            if (i == sel) {
-              chosenGroupIdx = j;
-              break;
-            }
-        }
+    int chosenGroupIdx;
+    int tot_choosen_filenames = 0;
+    for (int i = 0; i < MAX_GROUPS; i++) {
+        if (chosenGroups[i]) tot_choosen_filenames += tot_filenames[i];
     }
 
-    // [TODO][TOFIX]: selection of image is not fair! we should choose from an index of all images from all groups.
+
+    bool default_img_fallback = false;
+
+    if (tot_choosen_filenames > 0) {
+        if (fairness_by_group) {
+            int sel = 1 + (rand() % tot_chosen_group_names);
+            int i = 0, j = 0;
+            for (;; j++) {
+                if (chosenGroups[j]) {
+                    i++;
+                }
+                if (i == sel) {
+                  chosenGroupIdx = j;
+                  break;
+                }
+            }
+        } else {
+            int i;
+            //float temp_groups_weights[MAX_GROUPS];
+            float temp_rand = (float)(rand()%tot_choosen_filenames) / ((float)tot_choosen_filenames);
+            bool success = false;
+            for (i = 0; i < MAX_GROUPS; i++) {
+                if (chosenGroups[i]) {
+                    float temp_normalized_group_weight = (float)tot_filenames[i] / (float)tot_choosen_filenames; // [0..1] chance of group being chosen.
+                    //fprintf(stderr, "  norm_g_w = (tot_filenames[%d]:%d/tot_choosen_filenames:%d) = %f (extracted rand is %f)\n\r", tot_filenames[i], i, tot_choosen_filenames, temp_normalized_group_weight, temp_rand); //DEBUG
+                    if (temp_normalized_group_weight == 1.f || temp_rand < temp_normalized_group_weight) {
+                        success = true;
+                        break;
+                    }
+                    temp_rand -= temp_normalized_group_weight;
+                }
+            }
+            assert(success);
+            chosenGroupIdx = i;
+        }
+        //fprintf(stderr, "tot_chosen_group_names = %d, sel = %d\n\r", tot_chosen_group_names, sel); //DEBUG
+
+    } else {
+        fprintf(stderr, "[OTAKON][WARN]:LIST of png filenames was not provided or is void.\n\r");
+        default_img_fallback = true;
+        goto lab_drawing_phase;
+    }
 
     //fprintf(stderr, "chosenGroupIdx = %d\n\r", chosenGroupIdx); //DEBUG
 
-	int counter = 0;
+    {
+        int counter = 0;
+        //assert (tot_filenames[chosenGroupIdx] > 0);
+        // open counter file and get counter value.
+        if (orderMode == MODE_ORDER || orderMode == MODE_REVERSE) LoadCounterValue(&counter);
+        switch (orderMode) {
+            default:
+            case MODE_RANDOM:
+                chosenIdx = rand() % tot_filenames[chosenGroupIdx];
+                break;
+            case MODE_FIRST:
+                chosenIdx = 0;
+                break;
+            case MODE_ORDER:
+                if (counter >= tot_filenames[chosenGroupIdx]) counter = tot_filenames[chosenGroupIdx]-1;
+                chosenIdx = counter;
+                if (++counter >= tot_filenames[chosenGroupIdx]) counter = 0;
+                //save counter to file.
+                break;
+            case MODE_REVERSE:
+                if (counter >= tot_filenames[chosenGroupIdx]) counter = tot_filenames[chosenGroupIdx]-1;
+                chosenIdx = counter;
+                if (--counter < 0) counter = tot_filenames[chosenGroupIdx]-1;
+                break;
+        }
 
-	if (tot_filenames[chosenGroupIdx] > 0) {
-		// open counter file and get counter value.
-		if (orderMode == MODE_ORDER || orderMode == MODE_REVERSE) LoadCounterValue(&counter);
-		switch (orderMode) {
-			default:
-			case MODE_RANDOM:
-				chosenIdx = rand() % tot_filenames[chosenGroupIdx];
-				break;
-			case MODE_FIRST:
-				chosenIdx = 0;
-				break;
-			case MODE_ORDER:
-				if (counter >= tot_filenames[chosenGroupIdx]) counter = tot_filenames[chosenGroupIdx]-1;
-				chosenIdx = counter;
-				if (++counter >= tot_filenames[chosenGroupIdx]) counter = 0;
-				//save counter to file.
-				break;
-			case MODE_REVERSE:
-				if (counter >= tot_filenames[chosenGroupIdx]) counter = tot_filenames[chosenGroupIdx]-1;
-				chosenIdx = counter;
-				if (--counter < 0) counter = tot_filenames[chosenGroupIdx]-1;
-				break;
-		}
-	}
+        // open counter file and write new counter value.
+        if (orderMode == MODE_ORDER || orderMode == MODE_REVERSE) SaveCounterValue(counter);
+    }
 
-	// open counter file and write new counter value.
-	if (orderMode == MODE_ORDER || orderMode == MODE_REVERSE) SaveCounterValue(counter);
+    // ########################  DRAWING PHASE  ########################
+    lab_drawing_phase:;
 
     char sprite_path_buff[PATH_MAX];
     const char* temp_chosen_group_path = (chosenGroupIdx > 0) ? groupnames[chosenGroupIdx] : "";
@@ -665,17 +725,12 @@ int OtakonRun() {
     assert(ret < PATH_MAX);
 
     image<rgba_pixel> *sprite;
-    bool default_img_fallback = false;
-	if (tot_filenames[chosenGroupIdx] > 0) {
-        if (fExists(sprite_path_buff)) {
-            // load chosen image.
-            sprite = new image<rgba_pixel>(sprite_path_buff/*string_format("%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx])*/);
-        } else {
-            fprintf(stderr, "[OTAKON][ERROR]:Could not open image \"%s\".\n\r", sprite_path_buff);
-            default_img_fallback = true;
-        }
-	} else {
-        fprintf(stderr, "[OTAKON][WARN]:LIST of png filenames was not provided or is void.\n\r");
+	assert (tot_filenames[chosenGroupIdx] > 0);
+    if (fExists(sprite_path_buff)) {
+        // load chosen image.
+        sprite = new image<rgba_pixel>(sprite_path_buff/*string_format("%s/%s/%s.png", abs_exe_path, SPRITE_FILE_PATH, filenames[chosenIdx])*/);
+    } else {
+        fprintf(stderr, "[OTAKON][ERROR]:Could not open image \"%s\".\n\r", sprite_path_buff);
         default_img_fallback = true;
     }
 	if (default_img_fallback) {

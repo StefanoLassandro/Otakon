@@ -21,6 +21,7 @@ bin/otakon: src/otakon.cpp | bin
 
 docs/otakon_docs.pdf:
 	pandoc ./docs/otakon_docs.md -o ./docs/otakon_docs.pdf
+	pandoc -f markdown -t html5 -o "./docs/otakon_docs.md" "./docs/otakon_docs.html"
 
 clean:
 	rm ./bin/otakon

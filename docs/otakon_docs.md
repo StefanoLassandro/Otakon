@@ -72,6 +72,39 @@ For example:
 EDGE 2
 ```
 
+## Grouping
+For convenience, images can be grouped, and the user can specify from which
+groups images should be chosen.
+To create a group, create a new directory under `images/fruits/' and place
+all images picturing fruits inside.
+Then inside the config specify:
+```
+GROUP fruits
+```
+to make Otakon select images only from that group.
+
+Multiple groups can be chosen at once:
+```
+GROUP fruits
+GROUP birds
+```
+
+#### Grouping fairness
+Fairness can be by **groups** or by **singles**.
+Fairness by group means that every group as the same chance of being chosen.
+Fairness by singles means that every single image among all selected groups
+has the same chance of being chosen.
+Write
+```
+FAIRNESS GROUPS
+```
+or
+```
+FAIRNESS SINGLES
+```
+in the config file to choose the fairness mode (falls back to `SINGLES` if
+unspecified).
+
 ## Preventing Otakon from running
 The user can prevent the program from printing anything by writing the `KILL`
 command anywhere in the program (except in the middle of another command).
